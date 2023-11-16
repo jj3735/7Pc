@@ -1,0 +1,42 @@
+// Lambda7c with infix syntax
+// Choose this syntax if using an LR(1) parser generator
+
+// SYNTAX DIFFERENCES I ADDED:
+// * Beginseq must end in semicolon
+define x = 1;       // Define case in AST
+define x2:int = 4;  // TypedDefine in AST,
+define y = "abc";
+define square = int lambda n:int . n*n; //Define TypedLambda (int -> int)
+define double = lambda x.x+x;  // better to make this TypedLambda too
+define f = lambda x,y. if x<y then 1 else 2;
+let z=3 in (z+z);   // Let
+let z:float=4.5 in (z+z);  // TypedLet
+x+1;               // Binop("+",Integer(1),Var("x"))
+x*(2+x);
+f(5,7);               //  Sequence([f; 5; 7]) f,5,7 inside LBoxes
+                     //  or Apply(f,[5;7])
+print (f(5,67));        //  Uniop("display", Sequence ...)
+{ 3; 3.4; }          //  Beginseq([3,..
+while (x<10) {       //  Whileloop(Binop.., Beginseq..)
+   print x;
+   x = x+1;
+}
+
+define pi = 3.1415927;
+define area = lambda radius. radius*radius*pi;
+define intelligence_test = lambda x. {
+  define pi = 0;
+  print (area(x));
+}
+
+intelligence_test(51.0);
+
+// as 5
+define log2 = int lambda n:int.if n<2 then 0 else 1+log2(n/2);
+
+define a:int[] = [1,2,3]; // should bind tighter than assignment ops?
+define b:int[] = [0;4];   // equivalent to [0,0,0,0]
+a[0] = 9;
+print (a[2]);
+a[2] = 7;
+print (b[a[1]]);

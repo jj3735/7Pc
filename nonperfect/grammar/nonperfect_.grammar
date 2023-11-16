@@ -1,0 +1,235 @@
+#### TYPES ####
+! type expr =
+! | Integer of int
+! | Floatpt of float
+! | Strlit of string
+! | Binop of string*expr*expr
+! | Uniop of string*expr
+! | Ifelse of expr*expr*expr
+! | Whileloop of expr*expr
+! | Setq of LBox<string>*expr
+! | Beginseq of LBox<expr> list
+! | Sequence of LBox<expr> list
+! | Var of string
+! | Define of LBox<string>*expr
+! | Let of LBox<string>*expr*LBox<expr>
+! | TypedVar of lltype*string
+! | TypedDefine of LBox<lltype*string>*expr
+! | TypedLet of LBox<lltype*string>*expr*LBox<expr>
+! | TypedLambda of ((lltype*string) list)*lltype*LBox<expr>
+! | Vector of LBox<expr> list
+! | VectorGet of string*int
+! | VectorSet of string*int*expr
+! | Declare of LBox<string>*expr
+! | Nil
+! | Error
+
+# didn't use LList. would have been useful in retrospect.
+! and lltype =
+! | LLint | LLfloat | LLstring | LLunit
+! | LLvar of string | LLunknown
+! | LList of lltype | LLtuple of lltype list
+! | LLfun of (lltype list)*lltype
+! | LLuntypable
+
+valuetype expr
+
+#### TERMINALS ####
+## normal terminals ##
+# binop
+terminals + - * / % ^ = < > <= >= cons neq eq and or
+# uniop
+terminals ~ car cdr not display
+# var (type expressions)
+terminals int float string
+# vectors
+terminals vec_setq vec_get vec_make
+# others...
+terminals if while define let setq begin lambda declare
+## valuable terminals ##
+valueterminal INT ~ int ~ Num ~ int
+valueterminal FLT ~ float ~ Float ~ float
+valueterminal STR ~ string ~ StrLit ~ (fun x -> x)
+valueterminal VAR ~ string ~ Alphanum ~ (fun x -> x)
+
+## lex terminals ##
+lexterminal COLON :
+lexterminal LPAR (
+lexterminal RPAR )
+lexterminal LBRC [
+lexterminal RBRC ]
+
+#### NONTERMINALS ####
+## atomic type ##
+nonterminal Atom_
+## expressions ##
+nonterminal Expr_
+nonterminal ExprList_
+# vars
+nonterminal TypeExpr_ lltype
+nonterminal OptionalType_ lltype
+## statements ##
+# atom list
+nonterminal AtomList_ LBox<expr> list
+nonterminal CurrentAL_ LBox<expr> list
+# lambda
+nonterminal LambdaList_ (lltype*string) list
+nonterminal CurrentLL_ (lltype*string) list
+nonterminal OptionalAtom_
+#### PRODUCTIONS ####
+topsym ExprList_
+
+## atomic types ##
+Atom_ --> INT:i { Integer(i) }
+Atom_ --> FLT:f { Floatpt(f) }
+Atom_ --> STR:s { Strlit(s) }
+
+# an atomic type can revert back to an expression
+Atom_ --> LPAR Expr_:e RPAR { e }
+
+## vectors ##
+Atom_ --> LBRC AtomList_:t RBRC { Vector(t) }
+
+## variable ##
+# a variable can optionally specify a lltype
+Atom_ ==> VAR:v OptionalType_:t {
+  match (v, t) with
+    | (v, LLunknown) -> Var(v)
+    | (v, ty) -> TypedVar(ty,v)
+} <==
+
+# if no type is given, lltype is LLunknown, i.e., empty.
+OptionalType_ --> { LLunknown } 
+# if a type is given, lltype depends on what type is wanted.
+OptionalType_ --> COLON TypeExpr_:t { t }
+TypeExpr_ --> int { LLint }
+TypeExpr_ --> float { LLfloat }
+TypeExpr_ --> string { LLstring }
+TypeExpr_ --> LBRC TypeExpr_:t RBRC { LLtuple([t]) }
+
+## expressions ##
+# an expression can be the following:
+# * a binop of the form Expr_ --> Binop_ Atom_ Atom_. 
+Expr_ --> + Atom_:a Atom_:c { Binop("+",a,c) }
+Expr_ --> - Atom_:a Atom_:c { Binop("-",a,c) }
+Expr_ --> * Atom_:a Atom_:c { Binop("*",a,c) }
+Expr_ --> / Atom_:a Atom_:c { Binop("/",a,c) }
+Expr_ --> % Atom_:a Atom_:c { Binop("%",a,c) }
+Expr_ --> ^ Atom_:a Atom_:c { Binop("^",a,c) }
+Expr_ --> = Atom_:a Atom_:c { Binop("=",a,c) }
+Expr_ --> < Atom_:a Atom_:c { Binop("<",a,c) }
+Expr_ --> > Atom_:a Atom_:c { Binop(">",a,c) }
+Expr_ --> <= Atom_:a Atom_:c { Binop("<=",a,c) }
+Expr_ --> >= Atom_:a Atom_:c { Binop(">=",a,c) }
+Expr_ --> eq Atom_:a Atom_:c { Binop("eq",a,c) }
+Expr_ --> or Atom_:a Atom_:c { Binop("or",a,c) }
+Expr_ --> neq Atom_:a Atom_:c { Binop("neq",a,c) }
+Expr_ --> and Atom_:a Atom_:c { Binop("and",a,c) }
+Expr_ --> cons Atom_:a Atom_:c { Binop("cons",a,c) }
+
+# * a uniop of the form Expr_ --> Uniop_ Atom_
+Expr_ --> ~ Atom_:a { Uniop("~",a) }
+Expr_ --> car Atom_:a { Uniop("car",a) }
+Expr_ --> cdr Atom_:a { Uniop("cdr",a) }
+Expr_ --> not Atom_:a { Uniop("not",a) }
+Expr_ --> display Atom_:a { Uniop("display",a) }
+
+## statements ##
+# * an if-else statement
+Expr_ --> if Atom_:cond Atom_:iE Atom_:eE { Ifelse(cond,iE,eE) }
+
+# * a while loop
+Expr_ --> while Atom_:cond Atom_:doE { Whileloop(cond,doE) }
+
+# * a define statement (can be typed)
+Expr_ ==> define Atom_:[v] Atom_:a {
+  match (v, a) with
+    | ((Lbox(Var(s)) as lb), a) -> Define(lbox(s,lb.line,lb.column),a)
+    | ((Lbox(TypedVar(t,s)) as lb), a) -> TypedDefine(lbox((t,s),lb.line,lb.column),a)
+    | _ -> Error
+} <==
+
+# * a let statement (can be typed)
+Expr_ ==> let LPAR Atom_:[v] Atom_:a RPAR Atom_:[doE] {
+  match (v, a) with
+    | ((Lbox(Var(s)) as lb), a) -> Let(lbox(s,lb.line,lb.column),a,doE)
+    | ((Lbox(TypedVar(t,s)) as lb), a) -> TypedLet(lbox((t,s),lb.line,lb.column),a,doE)
+    | _ -> Error
+} <==
+
+# * a setq statement (destructive assignment)
+Expr_ ==> setq Atom_:[v] Atom_:doE {
+  match v with
+    | (Lbox(Var(s)) as lb) -> Setq(lbox(s,lb.line,lb.column),doE)
+    | _ -> Error
+} <==
+
+# * a begin sequence statement (sequence of expressions).
+Expr_ --> begin AtomList_:aL { Beginseq(aL) }
+
+# * a sequence (function application).
+Expr_ --> Atom_:[a] AtomList_:aL { Sequence(a::aL) }
+
+# atom list:
+# our atomic type list could either be empty...
+AtomList_ --> { [] }
+# ... or not, i.e., have an atom list currently being listed.
+AtomList_ --> CurrentAL_:c { c }
+# if there are no atoms in our list, we turn our atom into
+# an LBox [a] and then insert it as a singleton element of the list.
+CurrentAL_ --> Atom_:[a] { [a] }
+# if there are atoms currently in our list vLBox,
+# we cons our LBox'd atom [a] into it.
+CurrentAL_ --> Atom_:[a] CurrentAL_:vLBox { a::vLBox }
+
+# * a lambda statement
+Expr_ --> lambda LPAR LambdaList_:mL RPAR OptionalType_:t OptionalAtom_:[a] { TypedLambda(mL,t,a) }
+
+# lambda list:
+# this is a special version of ExprList since it is
+# an `(lltype*string) list`, not a `LBox<expr> list`.
+LambdaList_ --> { [] }
+LambdaList_ --> CurrentLL_:c { c }
+CurrentLL_ ==> Expr_:eS {
+  match eS with
+    | Sequence(s) ->
+      let mutable stupidArray = []
+      for i in s do
+        match i.value with
+          | TypedVar(t,s) ->
+            stupidArray <- (t,s)::stupidArray
+          | Var(s) ->
+            stupidArray <- (LLunknown,s)::stupidArray
+          | _ -> stupidArray <- []
+      stupidArray |> List.rev
+    | _ -> [] 
+} <==
+
+OptionalAtom_ --> Atom_:a { a }
+OptionalAtom_ --> { Nil }
+
+# * a setq statement for vectors
+Expr_ --> vec_setq VAR:v INT:i Atom_:value { VectorSet(v,i,value) }
+
+# * a get statement for a vector's index
+Expr_ --> vec_get VAR:v INT:i { VectorGet(v,i) }
+
+# * a make statement for vectors
+Expr_ --> vec_make Atom_:[a] INT:i { Vector([for x in 1 .. i -> a]) }
+
+# * a declare statement (dealing w/ recursion for lambdas)
+Expr_ ==> declare Atom_:[v] Atom_:a {
+  match (v, a) with
+    | ((Lbox(Var(s)) as lb), a) -> Declare(lbox(s,lb.line,lb.column),a)
+    | _ -> Error
+} <==
+ 
+#### program ####
+# * a program is a list of expressions.
+ExprList_ --> Atom_:[a] Atom_:[b] AtomList_:aL { Sequence(a::b::aL) }
+# * ... or just a singular expression.
+ExprList_ --> Atom_:a { a }
+# * for the amazing developer who decides to use this grammar for absolutely nothing:
+ExprList_ --> { Nil }
+
+EOF

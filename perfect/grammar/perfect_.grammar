@@ -1,0 +1,273 @@
+#### TYPES ####
+! type expr =
+! | Integer of int
+! | Floatpt of float
+! | Strlit of string
+! | Var of string
+! | TypedVar of lrtype*string
+! | Binop of string*expr*expr
+! | Uniop of string*expr
+! | Ifelse of expr*expr*expr
+! | Whileloop of expr*expr
+! | Setq of LBox<string>*expr
+! | Beginseq of LBox<expr> list
+! | Sequence of LBox<expr> list
+! | Apply of expr*expr list
+! | Define of LBox<string>*expr
+! | TypedDefine of LBox<lrtype*string>*expr
+! | Let of LBox<string>*expr*LBox<expr>
+! | TypedLet of LBox<lrtype*string>*expr*LBox<expr>
+! | TypedLambda of ((lrtype*string) list)*lrtype*LBox<expr>
+! | Vector of LBox<expr> list
+! | VectorGet of string*expr
+! | VectorSet of string*expr*expr
+! | Export of string
+! | Nil
+! | Error
+
+! and lrtype =
+! | LRint | LRfloat | LRstring | LRunit
+! | LRvar of string | LRunknown
+! | LRlist of lrtype | LRtuple of lrtype list
+! | LRclosure of ((lrtype list)*lrtype)*string
+! | LRuntypable
+
+valuetype expr
+
+#### TERMINALS ####
+## normal terminals ##
+# Btoms_ (uniop)
+terminals car cdr print ~
+lexterminal NOT !
+# Ctoms_
+terminals * / % 
+# Dtoms_
+terminals + -
+# Etoms_
+terminals < <= > >=
+# Ftoms_
+terminals == !=
+# Gtoms_
+terminal ^
+# Htoms_
+lexterminal AND &&
+# Itoms_
+lexterminal OR ||
+# Jtoms_
+terminal =
+# var (type expressions)
+terminals int float string
+# if-else
+terminals if then else
+# let
+terminals let in
+# others...
+terminals while define lambda export
+
+## valuable terminals ##
+valueterminal INT ~ int ~ Num ~ int
+valueterminal FLT ~ float ~ Float ~ float
+valueterminal STR ~ string ~ StrLit ~ (fun x -> x)
+valueterminal VAR ~ string ~ Alphanum ~ (fun x -> x)
+
+## lex terminals ##
+# misc.
+lexterminal COLON :
+lexterminal LPAR (
+lexterminal RPAR )
+lexterminal SEMI ;
+lexterminal LBRC {
+lexterminal RBRC }
+lexterminal LBRK [
+lexterminal RBRK ]
+lexterminal COMMA ,
+lexterminal PERIOD .
+
+#### NONTERMINALS ####
+## Xtoms ##
+nonterminals Atom_ Btom_ Ctom_ Dtom_ Etom_ Ftom_ Gtom_ Htom_ Itom_ Jtom_
+
+## expressions ##
+nonterminal Expr_
+nonterminal Type_ lrtype
+
+## statements ##
+nonterminal Stmt_
+
+## lists ##
+nonterminal ApplyList_ expr list
+nonterminal CurrentAPL_ expr list
+nonterminal StmtList_ LBox<expr> list
+nonterminal CurrentSL_ LBox<expr> list
+nonterminal AtomList_ LBox<expr> list
+nonterminal LambdaList_ (lrtype*string) list
+
+## optional stuff ##
+nonterminal OptionalType_ lrtype
+nonterminal OptionalLambdaType_ lrtype
+
+## the program ##
+nonterminal Program_
+
+#### PRODUCTIONS ####
+topsym Program_
+
+## atomic types ##
+# an atomic type can revert back to an expression
+Atom_ --> LPAR Expr_:e RPAR { e }
+
+Atom_ --> INT:i { Integer(i) }
+Atom_ --> FLT:f { Floatpt(f) }
+Atom_ --> STR:s { Strlit(s) }
+
+# * a get statement for a vector's index
+Atom_ --> VAR:v LBRK Expr_:e RBRK { VectorGet(v,e) }
+Atom_ --> VAR:v { Var(v) }
+
+## expressions ##
+# an expression can be the following:
+# * a binop of the form Expr_ --> Atom_ Binop_ Atom_
+# * or a uniop of the form Expr_ --> Uniop_ Atom_.
+# (C precedence is given by different levels of "X"toms,
+# organized in the terminals and here.)
+Btom_ --> Atom_:a { a }
+Btom_ --> ~ Atom_:a { Uniop("~",a) }
+Btom_ --> car Atom_:a { Uniop("car",a) }
+Btom_ --> cdr Atom_:a { Uniop("cdr",a) }
+Btom_ --> NOT Atom_:a { Uniop("!",a) }
+Btom_ --> print Atom_:a { Uniop("print",a) }
+
+# * a function application. semicolon not needed
+Btom_ --> Atom_:a LPAR ApplyList_:aL RPAR { Apply(a,aL) }
+
+Ctom_ --> Ctom_:c * Btom_:b { Binop("*",c,b) }
+Ctom_ --> Ctom_:c / Btom_:b { Binop("/",c,b) }
+Ctom_ --> Ctom_:c % Btom_:b { Binop("%",c,b) }
+Ctom_ --> Btom_:b { b }
+
+Dtom_ --> Dtom_:d + Ctom_:c { Binop("+",d,c) }
+Dtom_ --> Dtom_:d - Ctom_:c { Binop("-",d,c) }
+Dtom_ --> Ctom_:c { c }
+
+Etom_ --> Etom_:e <= Dtom_:d { Binop("<=",e,d) }
+Etom_ --> Etom_:e >= Dtom_:d { Binop(">=",e,d) }
+Etom_ --> Etom_:e < Dtom_:d { Binop("<",e,d) }
+Etom_ --> Etom_:e > Dtom_:d { Binop(">",e,d) }
+Etom_ --> Dtom_:d { d }
+
+Ftom_ --> Ftom_:f == Etom_:e { Binop("==",f,e) }
+Ftom_ --> Ftom_:f != Etom_:e { Binop("!=",f,e) }
+Ftom_ --> Etom_:e { e }
+
+Gtom_ --> Gtom_:g ^ Ftom_:f { Binop("^",g,f) }
+Gtom_ --> Ftom_:f { f }
+
+Htom_ --> Htom_:h AND Gtom_:g { Binop("&&",h,g) }
+Htom_ --> Gtom_:g { g }
+
+Itom_ --> Itom_:i OR Htom_:h { Binop("||",i,h) }
+Itom_ --> Htom_:h { h }
+
+# * an assignment operation.
+Jtom_ --> VAR:[v] = Jtom_:i { Setq(v,i) }
+Jtom_ --> Itom_:i { i }
+
+## expressions ##
+# * an expression can be an operation or function application.
+Expr_ --> Jtom_:j { j }
+
+# * a vector.
+Expr_ --> LBRK Atom_:[a] AtomList_:aL RBRK { Vector(a::aL) }
+
+# * a make expression for vectors.
+Expr_ --> LBRK Atom_:[a] SEMI INT:i RBRK { Vector([for x in 1 .. i -> a]) }
+
+## statements ##
+# * a statement is an expression with a semicolon.
+Stmt_ --> Expr_:e SEMI { e }
+
+# * an if-else expression.
+Stmt_ --> if Itom_:cond then Stmt_:iE else Stmt_:eE { Ifelse(cond,iE,eE) } 
+
+# * a while loop
+Stmt_ --> while LPAR Itom_:cond RPAR Stmt_:doE { Whileloop(cond,doE) }
+
+# * a begin sequence statement, aka a block of statements.
+Stmt_ --> LBRC StmtList_:sL RBRC { Beginseq(sL) }
+
+# * a sequence.
+Stmt_ --> Atom_:[a] AtomList_:aL { Sequence(a::aL) }
+
+# * a define statement (can be typed). needs semicolon.
+Stmt_ ==> define VAR:[v] OptionalType_:t = Stmt_:s {
+  match t with
+  | LRuntypable -> Error
+  | LRunknown -> Define(v,s)
+  | _ -> TypedDefine(lbox((t,v.value),v.line,v.column),s)
+} <==
+
+# * a let statement. needs semicolon.
+Stmt_ ==> let VAR:[v] OptionalType_:t = Atom_:a in Stmt_:[doE] {
+  match t with
+  | LRuntypable -> Error
+  | LRunknown -> Let(v,a,doE)
+  | _ -> TypedLet(lbox((t,v.value),v.line,v.column),a,doE)
+} <==
+
+# * a lambda statement.
+Stmt_ --> OptionalLambdaType_:t lambda LambdaList_:mL PERIOD Stmt_:[s] { TypedLambda(mL,t,s) }
+
+# * a setq statement for vectors
+Stmt_ --> VAR:v LBRK Expr_:e RBRK = Atom_:value SEMI { VectorSet(v,e,value) }
+
+# * exporting. creates no code
+Stmt_ --> export VAR:v SEMI { Export(v) }
+
+## lists ##
+# apply list:
+# this is a special version since it is an `expr list`,
+# not a `LBox<expr> list`.
+ApplyList_ --> { [] }
+ApplyList_ --> CurrentAPL_:c { c }
+CurrentAPL_ --> Itom_:a { [a] }
+CurrentAPL_ --> Itom_:a COMMA CurrentAPL_:vLBox { a::vLBox }
+
+# statement list:
+StmtList_ --> { [] }
+StmtList_ --> CurrentSL_:c { c }
+CurrentSL_ --> Stmt_:[s] { [s] }
+CurrentSL_ --> Stmt_:[s] CurrentSL_:vLBox { s::vLBox }
+
+# atom list:
+AtomList_ --> COMMA Atom_:[a] { [a] }
+AtomList_ --> COMMA Atom_:[a] AtomList_:vLBox { a::vLBox }
+
+# lambda list:
+# this is a special version of since it is a `string list`,
+# not a `LBox<expr> list`.
+LambdaList_ --> VAR:v OptionalType_:t { [(t,v)] }
+LambdaList_ --> VAR:v OptionalType_:t COMMA LambdaList_:llist { (t,v)::llist }
+
+## optional stuff ##
+OptionalType_ --> { LRunknown }
+OptionalType_ --> COLON Type_:t { t }
+Type_ --> int { LRint }
+Type_ --> float { LRfloat }
+Type_ --> string { LRstring }
+Type_ --> Type_:t LBRK RBRK { LRlist(t) }
+Type_ --> < VAR:v > { LRclosure(([],LRunknown),v) }
+
+# if you give a lambda type, there's no colon beforehand.
+OptionalLambdaType_ --> { LRunknown }
+OptionalLambdaType_ --> Type_:t { t }
+
+## the program ##
+# * a program is a list of statements.
+Program_ --> Stmt_:[a] Stmt_:[b] StmtList_:aL { Sequence(a::b::aL) }
+# * ... or just a singular statement.
+Program_ --> Stmt_:a { a }
+# * for the amazing developer who decides to use this grammar for absolutely nothing:
+Program_ --> { Nil }
+
+
+EOF
